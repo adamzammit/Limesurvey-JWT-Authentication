@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <config>
     <metadata>
-        <name>AuthSAML</name>
+        <name>AuthJWT</name>
         <type>plugin</type>
         <creationDate>2018-08-14</creationDate>
-        <last_update>2020-09-26</last_update>
-        <author>Frank Niesten</author>
-        <authorUrl>https://github.com/e-ucm/Limesurvey-SAML-Authentication.git</authorUrl>
-        <version>0.2.0</version>
+        <last_update>2021-03-25</last_update>
+        <author>Adam Zammit</author>
+        <authorUrl>https://github.com/adamzammit/Limesurvey-JWT-Authentication</authorUrl>
+        <version>1.0.0</version>
         <license>GPL 3.0</license>
-        <description><![CDATA[Enables SAML2 authentication]]></description>
+        <description><![CDATA[Enables JWT authentication]]></description>
     </metadata>
 
     <compatibility>
