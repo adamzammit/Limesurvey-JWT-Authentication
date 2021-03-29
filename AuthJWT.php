@@ -125,14 +125,17 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
         $this->subscribe('afterLogout');
         $this->subscribe('afterFailedLoginAttempt');
         $this->subscribe('newLoginForm');
+        $this->subscribe('afterLoginFormSubmit'); //need this to avoid password being reset
     }
 
 
     public function newLoginForm()                                              
     {                                                                           
+        $sPassword = $this->getBearerToken();
+        $this->getEvent()->getContent($this)
+                 ->addContent(CHtml::tag('span', array(), "<label for='password'>".gT("JWT Token")."</label>".CHtml::passwordField('password', $sPassword, array('size'=>256, 'class'=>"form-control"))));
     }                                                                           
            
-
 
     /**
      * Add AuthJWT Permission to global Permission
@@ -180,11 +183,7 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
             
                 $this->log(__METHOD__.' - JWT Token: '.$jwt, \CLogger::LEVEL_TRACE);
                 $this->setJWTToken($jwt);
-                $this->setAuthPlugin();
-
-                $this->newUserSession();
-                Yii::app()->controller->redirect("/admin");
-                Yii::app()->end();
+                $this->getEvent()->set('default', get_class($this)); //make this the default if data is passed
             }
         }
 
@@ -269,8 +268,8 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
         /* unsubscribe from beforeHasPermission, else current event will be modified during check permissions */
         $this->unsubscribe('beforeHasPermission');
 
-		//see if we have a valid JWT header
-        $jwt = $this->getJWTToken();
+		//see if we have a valid JWT header (as password field)
+		$jwt = $this->getPassword();
         if ($jwt !== null) {
             //see if it decodes correctly
             require_once(dirname(__FILE__).'/php-jwt/src/JWT.php');
@@ -504,6 +503,10 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
      * Source: https://stackoverflow.com/questions/40582161/how-to-properly-use-bearer-tokens
      * */
     private function getBearerToken() {
+		$request = $this->api->getRequest();
+		if (!is_null($request->getParam('jwt'))) {
+			return $request->getParam('jwt');
+		}
         $headers = $this->getAuthorizationHeader();
         // HEADER: Get the access token from the header
         if (!empty($headers)) {
