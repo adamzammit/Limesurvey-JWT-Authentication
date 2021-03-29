@@ -1,46 +1,53 @@
-# LimeSurvey-SAML
-LimeSurvey authentication plugin for authenticating users against an SAML Identity Provider. Forked to handle PHP session conflicts and add more configuration options.
+# LimeSurvey JWT Authentication
+LimeSurvey authentication plugin for authenticating users based on a JWT (Json Web Token)
 
 ## Requirements
 - LimeSurvey 3.XX
-- simpleSAMLphp
 
 ## Installation instructions
-- Create folder **AuthSAML** inside **limesurvey/plugins** folder
-- Copy **AuthSAML.php** from repo folder **Limesurvey-SAML-Authentication**
-- Paste it inside **limesurvey/plugins/AuthSAML** folder
-- Configure the plugin from the **Plugin Manager**
-- Go to **Admin > Configuration > Plugin Manager** or **https:/example.com/index.php/admin/pluginmanager/sa/index** and **Enable** the plugin
-- Place your own custom **saml_logo.gif** image at **imesurvey/assets/images**. It will be displayed as the login button
+- Download the zip from the [releases](https://github.com/adamzammit/Limesurvey-JWT-Authentication/releases) page and extract to your plugins folder.
+- Rename the downloaded folder to AuthJWT
+- You will also need to download the zip of  https://github.com/firebase/php-jwt and extract as the php-jwt folder within the plugin folder.
+
+- You can also clone directly from git: go to your plugins directory and type: (this will include the php-jwt code in one hit)
+```
+git clone --recurse-submodules https://github.com/adamzammit/Limesurvey-JWT-Authentication AuthJWT
+```
 
 ## Configuration options
-- **Path to the SimpleSAMLphp folder**: path to the simpleSAMLphp installation
-- **Does simplesamlphp use cookie as a session storage ?**: if simpleSAMLPHP is configured to use cookies as session storage
-set this to **true** so the code can handle session conficts between simpleSAMLphp and LimeSurvey
-- **SAML authentication source**: name of simpleSAMLphp service provider configuration from **authsources.php**
-- **SAML attributed used as username**: the attribute returned from the IdP that will be the unique **username** of the user on LimeSurvey. This attribute **MUST NOT** change on the IdP.
-**WARNING!!!** Please do not allow users to aquire the **admin** username, because is the super user of LimeSurvey
-- **SAML attributed used as email**: the attribute returned from the IdP that will be used as an email of the user on LimeSurvey
-- **SAML attributed used as name**: the attribute returned from the IdP that will be the users human friendly name
-- **Auto create users**: check if the user exists in the local database and if not the plugin creates the user from the SAML metadata
-- **Auto update users**: check if IdP has different attribute values for email and name and update them on LimeSurvey
-- **Force SAML login**: if this is set to true the plugin will force the login path to use only simpleSAMLphp
-- **Authtype base**: LimeSurvey internal configuration options, use it only if you know what you are doing. Configures where the users data are stored.
+
+### Required
+- **Method for JWT authentication**: choose which hashing/key method for JWT authentication
+- **Shared secret key (for ES256,HS256,HS384 or HS512 methods) or Public Key (for RS256,RS384,RS512 methods) for JWT authentication ?**: Shared password or public key used
+- **Name of attribute containing the username (required and unique)**: The JWT attribute that will contain the LimeSurvey username to be authenticated against/created
+
+### Optional
+- **Name of attribute containing the email address (leave blank to auto generate)**: the attribute in the JWT that contains the email address
+- **Name of attribute containing the display name (leave blank to auto generate based on users name)**: the attribute returned in the JWT that will be the users human friendly name
+- **Auto create users**: check if the user exists in the local database and if not the plugin creates the user from the JWT metadata
+- **Auto update users**: check if the JWT attributes have different attribute values for email and name and update them on LimeSurvey
 - **Storage base**: LimeSurvey internal configuration options, use it only if you know what you are doing. Configures where the plugin settings are stored.
 - **Logout Redirect URL**: configures where should the user be redirected after the logout path
+- **Allow initial user to login via JWT**: Check this if you want the admin user to be able to use JWT also
+- **Permissions**: Choose the default permissions given to newly created users
 
-## Images
-Login Page
+## Usage
+- Pass a "Authorization Bearer" header containing the JWT token to the login page to pre-fill the login with the JWT token
+- Pass the JWT token as a GET request ( eg: http://localhost/index.php/admin/authentication/sa/login/jwt/jwttokengoeshere )
+- The JWT token must contain at least one attribute that is the username field in LimeSurvey - this must be set as the attribute in the plugin configuration
+- The system will respect the expiry times set on tokens
 
-![Login Page with SAML button](images/login_page.png)
+## Resources
 
-Plugin settings at plugin manager
-![Plugin settings at plugin manager](images/saml_settings.png)
-
+- Generate test JWT tokens here: https://jwt.io/#debugger
 
 
-## External material
-- [simpleSAMLphp](https://simplesamlphp.org)
-- [How to setup a simpleSAMLphp Service Provider](https://simplesamlphp.org/docs/stable/simplesamlphp-sp)
-- [LimeSurvey](https://www.limesurvey.org/)
-- [How to install LimeSurvey](https://manual.limesurvey.org/Installation_-_LimeSurvey_CE)
+## Acknowledgements
+
+- LimeSurvey: https://github.com/LimeSurvey/LimeSurvey
+- PHP JWT library: https://github.com/firebase/php-jwt
+- LimeSurvey SAML authentication plugin (this is based on that plugin): https://github.com/e-ucm/Limesurvey-SAML-Authentication
+ 
+## Licence
+
+GPLv3

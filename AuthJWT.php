@@ -107,12 +107,6 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
             'label' => '- Permissions: User groups',
             'default' => 'create_p,read_p,update_p,delete_p',
         ),
-        'sInfo' => array (
-            'type' => 'info',
-            'label' => 'The URL to pass the Authorization header with JWT information to for login',
-            //            'help' => Yii::app()->createAbsoluteUrl('plugins/unsecure', array('plugin' => "LTIPlugin")),
-            'help' => 'plugins/unsecure/plugin/AuthJWT'
-        ),
     );
 
     public function init() {
