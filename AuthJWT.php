@@ -1,8 +1,8 @@
 <?php
 
 /*
- * LimeSurvey Auhtnetication Plugin for Limesurvey 3.14+
- * Auhtor: Frank Niesten
+ * LimeSurvey JWT Authentication Plugin for Limesurvey 3.14+
+ * Author: Adam Zammit <adam.zammit@acspri.org.au>
  * License: GNU General Public License v3.0
  *
  * This plugin is based on the following LimeSurvey Plugins:
@@ -12,53 +12,41 @@
  * URL: https://github.com/Frankniesten/Limesurvey-SAML-Authentication
  */
 
-class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
+class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
 {
     protected $storage = 'LimeSurvey\PluginManager\DbStorage';
-    protected $ssp = null;
 
-    static protected $description = 'Core: SAML authentication';
-    static protected $name = 'SAML';
+    static protected $description = 'JWT authentication';
+    static protected $name = 'AuthJWT';
 
+    protected $JWTToken = null;
+    
     protected $settings = array(
-        'simplesamlphp_path' => array(
-            'type' => 'string',
-            'label' => 'Path to the SimpleSAMLphp folder',
-            'default' => '/usr/share/simplesamlphp',
+        'authjwt_method' => array(
+            'type' => 'select',
+            'label' => 'Method for JWT authentication',
+            'options' => array('HS256'=>'HS256','ES256'=>'ES256','HS384'=>'HS384','HS512'=>'HS512','RS256'=>'RS256','RS384'=>'RS384','RS512'=>'RS512'),
+            'default' => 'HS256',
         ),
-        'simplesamlphp_cookie_session_storage' => array(
-            'type' => 'checkbox',
-            'label' => 'Does simplesamlphp use cookie as a session storage ?',
-            'default' => true,
-        ),
-        'saml_authsource' => array(
+        'authjwt_key' => array(
             'type' => 'string',
-            'label' => 'SAML authentication source',
-            'default' => 'default-sp',
+            'label' => 'Shared secret key (for ES256,HS256,HS384 or HS512 methods) or Public Key (for RS256,RS384,RS512 methods) for JWT authentication',
+            'default' => '',
         ),
-        'saml_uid_mapping' => array(
+        'authjwt_users_name_attr' => array(
             'type' => 'string',
-            'label' => 'SAML attribute used as username',
-            'default' => 'uid',
+            'label' => 'Name of attribute containing the username (required and unique)',
+            'default' => 'username',
         ),
-        'saml_mail_mapping' => array(
+        'authjwt_email_attr' => array(
             'type' => 'string',
-            'label' => 'SAML attribute used as email',
-            'default' => 'mail',
+            'label' => 'Name of attribute containing the email address (leave blank to auto generate)',
+            'default' => '',
         ),
-        'saml_group_mapping' => array (
+        'authjwt_full_name' => array(
             'type' => 'string',
-            'label' => 'SAML attributed used for groups',
-            'default' => 'member',
-        ),
-        'user_access_group' => array (
-            'type' => 'string',
-            'label' => 'User\'s group required to login using SAML',
-        ),
-        'saml_name_mapping' => array(
-            'type' => 'string',
-            'label' => 'SAML attribute used as name',
-            'default' => 'cn',
+            'label' => 'Name of attribute containing the display name (leave blank to auto generate based on users name)',
+            'default' => '',
         ),
         'auto_create_users' => array(
             'type' => 'checkbox',
@@ -69,16 +57,6 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
             'type' => 'checkbox',
             'label' => 'Auto update users',
             'default' => true,
-        ),
-        'force_saml_login' => array(
-            'type' => 'checkbox',
-            'label' => 'Force SAML login.',
-            'default' => false,
-        ),
-        'authtype_base' => array(
-            'type' => 'string',
-            'label' => 'Authtype base to modify the login form. If null, then no modification is done.',
-            'default' => 'Authdb',
         ),
         'storage_base' => array(
             'type' => 'string',
@@ -97,7 +75,7 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
         ),
         'allowInitialUser' => array(
             'type' => 'checkbox',
-            'label' => 'Allow initial user to login via SAML',
+            'label' => 'Allow initial user to login via JWT',
         ),
         'auto_create_labelsets' => array (
             'type' => 'string',
@@ -129,12 +107,11 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
             'label' => '- Permissions: User groups',
             'default' => 'create_p,read_p,update_p,delete_p',
         ),
-        'simplesamlphp_logo_path' => array(
-            'type' => 'logo',
-            'label' => 'Plugin logo',
-            'path' => 'assets/SSO_LOGO.svg',
-            'alt' => 'SAML Logo',
-            'style' => 'width:128px',
+        'sInfo' => array (
+            'type' => 'info',
+            'label' => 'The URL to pass the Authorization header with JWT information to for login',
+            //            'help' => Yii::app()->createAbsoluteUrl('plugins/unsecure', array('plugin' => "LTIPlugin")),
+            'help' => 'plugins/unsecure/plugin/AuthJWT'
         ),
     );
 
@@ -146,40 +123,31 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
         $this->subscribe('beforeLogin');
         $this->subscribe('newUserSession');
         $this->subscribe('afterLogout');
-
-        if (!$this->get('force_saml_login', null, null, $this->settings['force_saml_login']['default'])) {
-            $this->subscribe('newLoginForm');
-        }
-
-        $this->subscribe('beforeActivate');
         $this->subscribe('afterFailedLoginAttempt');
+        $this->subscribe('newLoginForm');
     }
 
-    public function beforeActivate()
-    {
-        if ( $this->get_saml_instance() === null ) {
-            $event = $this->getEvent();
-            $event->set('success', false);
-            $event->set('message', gT("SAML authentication failed: Simplesamlphp installation not available."));
-        }
-    }
+
+    public function newLoginForm()                                              
+    {                                                                           
+    }                                                                           
+           
+
 
     /**
-     * Add AuthSAML Permission to global Permission
+     * Add AuthJWT Permission to global Permission
      */
     public function getGlobalBasePermissions()
     {
         $this->getEvent()->append('globalBasePermissions', array(
-
-
-            'auth_saml' => array(
+            'auth_jwt' => array(
                 'create' => false,
                 'update' => false,
                 'delete' => false,
                 'import' => false,
                 'export' => false,
-                'title' => gT("Use SAML authentication"),
-                'description' => gT("Use SAML authentication"),
+                'title' => gT("Use JWT authentication"),
+                'description' => gT("Use JWT authentication"),
                 'img' => 'usergroup'
             ),
         ));
@@ -192,7 +160,7 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
     public function beforeHasPermission()
     {
         $oEvent = $this->getEvent();
-        if ($oEvent->get('sEntityName') != 'global' || $oEvent->get('sPermission') != 'auth_saml' || $oEvent->get('sCRUD') != 'read') {
+        if ($oEvent->get('sEntityName') != 'global' || $oEvent->get('sPermission') != 'auth_jwt' || $oEvent->get('sCRUD') != 'read') {
             return;
         }
         $iUserId = Permission::getUserId($oEvent->get('iUserID'));
@@ -204,59 +172,40 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
     public function beforeLogin() {
         $this->log(__METHOD__.' - BEGIN', \CLogger::LEVEL_TRACE);
 
-        $ssp = $this->get_saml_instance();
-
-        $sessionCleanupNeeded = $this->isSessionCleanupNeeded();
-
-        $ssp = $this->get_saml_instance();
-
-        if ($this->get('force_saml_login', null, null, $this->settings['force_saml_login']['default'])) {
-            $ssp->requireAuth();
-        }
-
-        $isAuthenticated = $ssp->isAuthenticated();
-
-        if ($isAuthenticated) {
-            $sUser = $this->getUserNameSAML();
-            // must be done as early as possible and before touching LS session
-            $this->doSessionCleanup($sessionCleanupNeeded);
-
+        $jwt = $this->getBearerToken();
+        if ($jwt !== null) {
             $showingError = $this->getFlash('showing_error', false);
             $this->log(__METHOD__.' - showingError: '.($showingError ? 'true' : 'false'), \CLogger::LEVEL_TRACE);
             if (! $showingError && ! FailedLoginAttempt::model()->isLockedOut() ) {
-
-                $this->log(__METHOD__.' - sUser: '.$sUser, \CLogger::LEVEL_TRACE);
-
-                $this->setUsername($sUser);
+            
+                $this->log(__METHOD__.' - JWT Token: '.$jwt, \CLogger::LEVEL_TRACE);
+                $this->setJWTToken($jwt);
                 $this->setAuthPlugin();
+
+                $this->newUserSession();
+                Yii::app()->controller->redirect("/admin");
+                Yii::app()->end();
             }
-        } else {
-            // Do not want to move outside because session cleanup will be called twice in some cases
-            $this->doSessionCleanup($sessionCleanupNeeded);
         }
 
         $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
     }
 
-    private function isSessionCleanupNeeded()
+    private function setJWTToken($jwt) 
     {
-        $sessionCleanupNeeded = session_status() === PHP_SESSION_ACTIVE;
-        $sessionCleanupRequired = $this->get('simplesamlphp_cookie_session_storage', null, null, $this->settings['simplesamlphp_cookie_session_storage']['default']);
-        return $sessionCleanupNeeded && $sessionCleanupRequired;
+        $this->JWTToken = $jwt;
     }
 
-    private function doSessionCleanup($doIt=false)
+    private function getJWTToken() 
     {
-        if ($doIt) {
-            \SimpleSAML\Session::getSessionFromRequest()->cleanup();
-        }
+        return $this->JWTToken;
     }
 
     private function getFlash($key, $defaultValue= null)
     {
         $this->log(__METHOD__.' - BEGIN', \CLogger::LEVEL_TRACE);
 
-        $fqKey = 'AuthSAML.'.$key;
+        $fqKey = 'AuthJWT.'.$key;
         $result = Yii::app()->session->remove($fqKey);
         if ($result === null) {
             $result = $defaultValue;
@@ -271,7 +220,7 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
     {
         $this->log(__METHOD__.' - BEGIN', \CLogger::LEVEL_TRACE);
 
-        $fqKey = 'AuthSAML.'.$key;
+        $fqKey = 'AuthJWT.'.$key;
 
         if ($value === $defaultValue) {
             Yii::app()->session->remove($fqKey);
@@ -296,50 +245,11 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
     {
         $this->log(__METHOD__.' - BEGIN', \CLogger::LEVEL_TRACE);
 
-        $ssp = $this->get_saml_instance();
-
-        if ($ssp->isAuthenticated()) {
-            $redirect = $this->get('logout_redirect', null, null, $this->settings['logout_redirect']['default']);
-            $redirect = Yii::app()->getController()->createUrl($redirect);
-
-            $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
-
-            Yii::app()->controller->redirect($ssp->getLogoutUrl($redirect));
-            Yii::app()->end();
-        }
-
+        $redirect = $this->get('logout_redirect', null, null, $this->settings['logout_redirect']['default']);
         $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
-    }
 
-    public function newLoginForm()
-    {
-        $this->log(__METHOD__.' - BEGIN', \CLogger::LEVEL_TRACE);
-
-        $authtype_base = $this->get('authtype_base', null, null, $this->settings['authtype_base']['default']);
-
-        $ssp = $this->get_saml_instance();
-        $loginUrl = $ssp->getLoginURL();
-
-        $pluginsettings = $this->getPluginSettings(true);
-        $imgUrl = $pluginsettings['simplesamlphp_logo_path']['path'];
-
-        if ($authtype_base != null) {
-            // This add the login button to the auth_base authentication method
-            $this->getEvent()
-                ->getContent($authtype_base)
-                ->addContent('<center>Click on that button to initiate SAML Login<br>
-                    <a href="' . $loginUrl . '" title="SAML Login">
-                    <img src="' .$imgUrl . '" width="100px"></a></center><br>
-                    ', LimeSurvey\PluginManager\PluginEventContent::PREPEND);
-        }
-
-        // This generates the "login form" for this plugin, basically a link to follow.
-        $this->getEvent()
-            ->getContent($this)
-            ->addContent('<center>Click on that button to initiate SAML Login<br>
-                <a href="' . $loginUrl . '" title="SAML Login">
-                 <img src="' . $imgUrl . '" width="100px"></a></center><br>
-                 ');
+        Yii::app()->controller->redirect($redirect);
+        Yii::app()->end();
 
         $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
     }
@@ -348,7 +258,7 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
     {
         $this->log(__METHOD__.' - BEGIN', \CLogger::LEVEL_TRACE);
 
-        // Do nothing if this user is not AuthSAML type
+        // Do nothing if this user is not AuthJWT type
         $identity = $this->getEvent()->get('identity');
         if ($identity->plugin != get_class($this)) {
             $this->log(__METHOD__.' - Authentication not managed by this plugin', \CLogger::LEVEL_TRACE);
@@ -359,109 +269,49 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
         /* unsubscribe from beforeHasPermission, else current event will be modified during check permissions */
         $this->unsubscribe('beforeHasPermission');
 
-        $ssp = $this->get_saml_instance();
-        $isAuthenticated = $ssp->isAuthenticated();
-
-        if (! $isAuthenticated) {
-
-            $this->doSessionCleanup($this->isSessionCleanupNeeded());
-
-            $this->setAuthFailure(self::ERROR_USERNAME_INVALID);
-
-            $this->log(__METHOD__.' - ERROR: User not authenticated, but was expected', \CLogger::LEVEL_ERROR);
+		//see if we have a valid JWT header
+        $jwt = $this->getJWTToken();
+        if ($jwt !== null) {
+            //see if it decodes correctly
+            require_once(dirname(__FILE__).'/php-jwt/src/JWT.php');
+            try {
+                $payload = \Firebase\JWT\JWT::decode($jwt, $this->get('authjwt_key', null, null, true), array($this->get('authjwt_method', null, null, true)));
+            } catch (Exception $e) {
+                //failed login
+                $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Failed to decode payload'));
+            	$this->log(__METHOD__.' - ERROR: Failed to decode JWT payload', \CLogger::LEVEL_ERROR);
+	            $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
+				return;				
+            }
+        } else {
+            $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Limesurvey did not receive JWT token in header'));
+            $this->log(__METHOD__.' - ERROR: Limesurvey did not receive JWT token in header', \CLogger::LEVEL_ERROR);
             $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
-            return;
-        }
+			return;
+		}
 
-        $samlConfigurationError = isset(Yii::app()->session['AuthSAML_configuration_error']);
-        if ($samlConfigurationError){
-
-            $this->doSessionCleanup($this->isSessionCleanupNeeded());
-
+        $jwtConfigurationError = isset(Yii::app()->session['AuthJWT_configuration_error']);
+        if ($jwtConfigurationError){
             $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Limesurvey is not configured properly to use the SSO'));
-
             $this->log(__METHOD__.' - ERROR: Limesurvey is not configured properly to use the SSO', \CLogger::LEVEL_ERROR);
             $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
             return;
         }
 
-        $sUser = $this->getUserNameSAML();
-        $name = $this->getUserCommonName();
-        $mail = $this->getUserMail();
-        $usergroup = $this->getUserGroup();
-
-        $this->doSessionCleanup($this->isSessionCleanupNeeded());
+        $sUser = $this->getUserNameJWT($payload);
+        $name = $this->getUserCommonName($payload);
+        $mail = $this->getUserMail($payload);
 
         if (empty($sUser)) {
-            $attributeName = $this->getUserNameSAMLAttributeName();
+            $attributeName = $this->getUserNameJWTAttributeName();
 
-            Yii::app()->session['AuthSAML_configuration_error'] = true;
+            Yii::app()->session['AuthJWT_configuration_error'] = true;
 
-            $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Required SAML attribute missing'));
+            $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Required JWT attribute missing'));
 
-            $this->log(__METHOD__." - ERROR: Missing required attribute '$attributeName' in SAML response.", \CLogger::LEVEL_ERROR);
+            $this->log(__METHOD__." - ERROR: Missing required attribute '$attributeName' in JWT response.", \CLogger::LEVEL_ERROR);
             $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
             return;
-        }
-
-        if (empty($name)) {
-            $attributeName = $this->getUserCommonNameSAMLAttributeName();
-
-            Yii::app()->session['AuthSAML_configuration_error'] = true;
-
-            $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Required SAML attribute missing'));
-
-            $this->log(__METHOD__." - ERROR: Missing required attribute '$attributeName' in SAML response.", \CLogger::LEVEL_ERROR);
-            $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
-            return;
-        }
-
-        if (empty($mail)) {
-            $attributeName = $this->getUserMailSAMLAttributeName();
-
-            Yii::app()->session['AuthSAML_configuration_error'] = true;
-
-            $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Required SAML attribute missing'));
-
-            $this->log(__METHOD__." - ERROR: Missing required attribute '$attributeName' in SAML response.", \CLogger::LEVEL_ERROR);
-            $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
-            return;
-        }
-
-
-        $user_access_group = $this->get('user_access_group');
-        if (!empty($user_access_group)) {
-            $user_access = false;
-            if ( is_array($usergroup) ) {
-                foreach ($usergroup as $key => $value) {
-                    // For example: "ls" or "ls,admin" or "ADLDS CN=G-APP-5650-LimeSurvey,OU=H-5600-APP,OU=TestAD,O=TestAD-AD"
-                    $group = $value;
-                    if (strpos($value, ',') !== false) {
-                        $group_array = explode(',', $value);
-                        $group = $group_array[0];
-                    }
-
-                    if (strpos($group, '=') !== false) {
-                        $group_array = explode('=', $group);
-                        $group = $group_array[1];
-                    }
-
-                    if ($group == $user_access_group) {
-                        $user_access = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!$user_access) {
-
-                $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('You have no access'));
-
-                $this->log(__METHOD__.' - ERROR', \CLogger::LEVEL_ERROR);
-                $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
-
-                return;
-            }
         }
 
         // Get LS user
@@ -483,10 +333,11 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
 
                     $oUser = $this->api->getUserByName($sUser);
 
-                    $this->pluginManager->dispatchEvent(new PluginEvent('newUserLogin', $this));
+                    $this->setUsername($sUser);
 
+
+					$this->pluginManager->dispatchEvent(new PluginEvent('newUserLogin', $this));
                     $this->setAuthSuccess($oUser);
-
                     $this->log(__METHOD__.' - User created: '.$oUser->uid, \CLogger::LEVEL_INFO);
                 } else {
                     $this->log(__METHOD__.' - ERROR: Could not add the user: '.$oUser->uid, \CLogger::LEVEL_ERROR);
@@ -499,14 +350,14 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
             }
         } else {
 
-            // If user cannot login via SAML: setAuthFailure
+            // If user cannot login via JWT: setAuthFailure
             if (($oUser->uid == 1 && !$this->get('allowInitialUser'))
-                || !Permission::model()->hasGlobalPermission('auth_saml', 'read', $oUser->uid))
+                || !Permission::model()->hasGlobalPermission('auth_jwt', 'read', $oUser->uid))
             {
                 $this->log(__METHOD__.' - ERROR: authentication method is not allowed for this user: '.$oUser->uid, \CLogger::LEVEL_ERROR);
                 $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
 
-                $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('SAML authentication method is not allowed for this user'));
+                $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('JWT authentication method is not allowed for this user'));
                 return;
             }
 
@@ -523,7 +374,10 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
                 $oUser = $this->api->getUserByName($sUser);
             }
 
+            $this->setUsername($sUser);
+			$this->pluginManager->dispatchEvent(new PluginEvent('newUserLogin', $this));
             $this->setAuthSuccess($oUser);
+            $result = $this->getEvent()->get('result');
             $this->log(__METHOD__.' - User updated: '.$oUser->uid, \CLogger::LEVEL_TRACE);
         }
         $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
@@ -531,7 +385,7 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
 
     private function assignUserPermissions(string $uid)
     {
-        Permission::model()->setGlobalPermission($uid, 'auth_saml');
+        Permission::model()->setGlobalPermission($uid, 'auth_jwt');
 
         Permission::model()->insertSomeRecords(array ('uid' => $uid, 'permission' => getGlobalSetting("defaulttheme"), 'entity_id' => 0, 'entity' => 'template', 'read_p' => 1));
 
@@ -572,90 +426,91 @@ class AuthSAML extends LimeSurvey\PluginManager\AuthPluginBase
         }
     }
 
-    /**
-     * Initialize SAML authentication
-     * @return void
-     */
-    public function get_saml_instance() {
-
-        if ($this->ssp == null) {
-
-            $simplesamlphp_path = $this->get('simplesamlphp_path', null, null, $this->settings['simplesamlphp_path']['default']);
-
-            // To avoid __autoload conflicts, remove limesurvey autoloads temporarily
-            $autoload_functions = spl_autoload_functions();
-            foreach ($autoload_functions as $function) {
-                spl_autoload_unregister($function);
-            }
-
-            require_once($simplesamlphp_path.'/lib/_autoload.php');
-
-            $saml_authsource = $this->get('saml_authsource', null, null, $this->settings['saml_authsource']['default']);
-
-            if (class_exists('\SimpleSAML\Auth\Simple')) {
-                $this->ssp = new \SimpleSAML\Auth\Simple($saml_authsource);
-            }
-
-            // To avoid __autoload conflicts, restote the limesurvey autoloads
-            foreach ($autoload_functions as $function) {
-                spl_autoload_register($function);
-            }
-        }
-
-        return $this->ssp;
-    }
-
-    public function getUserNameSAML()
+    public function getUserNameJWT($jwt)
     {
-        return $this->getSAMLAttribute($this->getUserNameSAMLAttributeName());
+        return $this->getJWTAttribute($jwt,$this->getUserNameJWTAttributeName());
     }
 
-    public function getUserNameSAMLAttributeName()
+    public function getUserNameJWTAttributeName()
     {
-        return $this->get('saml_uid_mapping', null, null, $this->settings['saml_uid_mapping']['default']);
+        return $this->get('authjwt_users_name_attr', null, null, $this->settings['authjwt_users_name_attr']['default']);
     }
 
-    public function getSAMLAttribute(string $attribute_name)
+    public function getJWTAttribute($jwt,string $attribute_name)
     {
         $attributeValue = '';
-        $ssp = $this->get_saml_instance();
-        $attributes = $this->ssp->getAttributes();
 
-        if (!empty($attributes)) {
-            if (array_key_exists($attribute_name, $attributes) && !empty($attributes[$attribute_name]))	{
-                $attributeValue = $attributes[$attribute_name][0];
+        if (!empty($jwt)) {
+            if (isset($jwt->$attribute_name) && !empty($jwt->$attribute_name))	{
+                $attributeValue = $jwt->$attribute_name;
             }
         }
         return $attributeValue;
     }
 
-    public function getUserCommonName()
+    public function getUserCommonName($jwt)
     {
-        return $this->getSAMLAttribute($this->getUserCommonNameSAMLAttributeName());
+        $name = $this->getJWTAttribute($jwt,$this->getUserCommonNameJWTAttributeName());
+        if (empty($name) || $name == "") {
+            $name = $this->getUserNameJWT($jwt);
+        }
+        return $name;
     }
 
-    private function getUserCommonNameSAMLAttributeName()
+    private function getUserCommonNameJWTAttributeName()
     {
-        return $this->get('saml_name_mapping', null, null, $this->settings['saml_name_mapping']['default']);
+        return $this->get('authjwt_full_name', null, null, $this->settings['authjwt_full_name']['default']);
     }
 
-    public function getUserMail()
+    public function getUserMail($jwt)
     {
-        return $this->getSAMLAttribute($this->getUserMailSAMLAttributeName());
+        $email = $this->getJWTAttribute($jwt,$this->getUserMailJWTAttributeName());
+        if (empty($email) || $email == "") {
+            $email = "lime@lime.com";
+        }
+        return $email;
     }
 
-    private function getUserMailSAMLAttributeName()
+    private function getUserMailJWTAttributeName()
     {
-        return $this->get('saml_mail_mapping', null, null, $this->settings['saml_mail_mapping']['default']);
+        return $this->get('authjwt_email_attr', null, null, $this->settings['authjwt_email_attr']['default']);
     }
 
-    private function getUserGroup()
-    {
-        return $this->getSAMLAttribute($this->getUserGroupSAMLAttributeName());
-    }
+    /**
+     * Get header Authorization
+     * Source: https://stackoverflow.com/questions/40582161/how-to-properly-use-bearer-tokens
+     * */
+    private function getAuthorizationHeader(){
+            $headers = null;
+            if (isset($_SERVER['Authorization'])) {
+                $headers = trim($_SERVER["Authorization"]);
+            }
+            else if (isset($_SERVER['HTTP_AUTHORIZATION'])) { //Nginx or fast CGI
+                $headers = trim($_SERVER["HTTP_AUTHORIZATION"]);
+            } elseif (function_exists('apache_request_headers')) {
+                $requestHeaders = apache_request_headers();
+                // Server-side fix for bug in old Android versions (a nice side-effect of this fix means we don't care about capitalization for Authorization)
+                $requestHeaders = array_combine(array_map('ucwords', array_keys($requestHeaders)), array_values($requestHeaders));
+                //print_r($requestHeaders);
+                if (isset($requestHeaders['Authorization'])) {
+                    $headers = trim($requestHeaders['Authorization']);
+                }
+            }
+            return $headers;
+        }
 
-    private function getUserGroupSAMLAttributeName()
-    {
-        return $this->get('saml_group_mapping', null, null, $this->settings['saml_group_mapping']['default']);
+    /**
+     * get access token from header
+     * Source: https://stackoverflow.com/questions/40582161/how-to-properly-use-bearer-tokens
+     * */
+    private function getBearerToken() {
+        $headers = $this->getAuthorizationHeader();
+        // HEADER: Get the access token from the header
+        if (!empty($headers)) {
+            if (preg_match('/Bearer\s(\S+)/', $headers, $matches)) {
+                return $matches[1];
+            }
+        }
+        return null;
     }
 }
