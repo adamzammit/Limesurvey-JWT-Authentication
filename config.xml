@@ -3,8 +3,8 @@
     <metadata>
         <name>AuthJWT</name>
         <type>plugin</type>
-        <creationDate>2018-08-14</creationDate>
-        <last_update>2021-03-25</last_update>
+        <creationDate>2021-03-25</creationDate>
+        <last_update>2021-03-29</last_update>
         <author>Adam Zammit</author>
         <authorUrl>https://github.com/adamzammit/Limesurvey-JWT-Authentication</authorUrl>
         <version>1.0.0</version>
