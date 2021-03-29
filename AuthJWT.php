@@ -273,11 +273,14 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
         if ($jwt !== null) {
             //see if it decodes correctly
             require_once(dirname(__FILE__).'/php-jwt/src/JWT.php');
+            require_once(dirname(__FILE__).'/php-jwt/src/BeforeValidException.php');
+            require_once(dirname(__FILE__).'/php-jwt/src/SignatureInvalidException.php');
+            require_once(dirname(__FILE__).'/php-jwt/src/ExpiredException.php');
             try {
                 $payload = \Firebase\JWT\JWT::decode($jwt, $this->get('authjwt_key', null, null, true), array($this->get('authjwt_method', null, null, true)));
             } catch (Exception $e) {
                 //failed login
-                $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Failed to decode payload'));
+                $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Failed to login. Please go back and try again (your token is not valid, it may have expired)'));
             	$this->log(__METHOD__.' - ERROR: Failed to decode JWT payload', \CLogger::LEVEL_ERROR);
 	            $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
 				return;				
