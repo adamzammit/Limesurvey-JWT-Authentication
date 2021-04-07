@@ -48,6 +48,11 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
             'label' => 'Name of attribute containing the display name (leave blank to auto generate based on users name)',
             'default' => '',
         ),
+        'auto_login' => array(
+            'type' => 'checkbox',
+            'label' => 'Auto login when a JWT token is provided',
+            'default' => true,
+        ),
         'auto_create_users' => array(
             'type' => 'checkbox',
             'label' => 'Auto create users',
@@ -127,7 +132,13 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
     {                                                                           
         $sPassword = $this->getBearerToken();
         $this->getEvent()->getContent($this)
-                 ->addContent(CHtml::tag('span', array(), "<label for='password'>".gT("JWT Token")."</label>".CHtml::passwordField('password', $sPassword, array('size'=>256, 'class'=>"form-control"))));
+                         ->addContent(CHtml::tag('span', array(), "<label for='password'>".gT("JWT Token")."</label>".CHtml::passwordField('password', $sPassword, array('size'=>256, 'class'=>"form-control"))));
+
+        //if token is set, also auto login if requested
+        $auto_login  = $this->get('auto_login', null, null, true);
+        if ($auto_login && !empty($sPassword)) {
+            App()->getClientScript()->registerScript("autoLoginScript",'$( document ).ready(function() { $( "button" ).trigger( "click" );});');
+		}
     }                                                                           
            
 
