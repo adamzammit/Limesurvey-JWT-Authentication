@@ -18,7 +18,7 @@ git clone --recurse-submodules https://github.com/adamzammit/Limesurvey-JWT-Auth
 
 ### Required
 - **Method for JWT authentication**: choose which hashing/key method for JWT authentication
-- **Shared secret key (for ES256,HS256,HS384 or HS512 methods) or Public Key (for RS256,RS384,RS512 methods) for JWT authentication ?**: Shared password or public key used
+- **BASE64 erncidedShared secret key (for ES256,HS256,HS384 or HS512 methods) or Public Key (for RS256,RS384,RS512 methods) for JWT authentication ?**: Shared password or public key used - must be base64 encoded - see https://www.base64encode.org/ for an easy way to encode as base64
 - **Name of attribute containing the username (required and unique)**: The JWT attribute that will contain the LimeSurvey username to be authenticated against/created
 
 ### Optional

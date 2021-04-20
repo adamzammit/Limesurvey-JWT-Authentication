@@ -4,10 +4,10 @@
         <name>AuthJWT</name>
         <type>plugin</type>
         <creationDate>2021-03-25</creationDate>
-        <last_update>2021-04-07</last_update>
+        <last_update>2021-04-20</last_update>
         <author>Adam Zammit</author>
         <authorUrl>https://github.com/adamzammit/Limesurvey-JWT-Authentication</authorUrl>
-        <version>1.0.1</version>
+        <version>1.0.2</version>
         <license>GPL 3.0</license>
         <description><![CDATA[Enables JWT authentication]]></description>
     </metadata>

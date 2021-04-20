@@ -30,7 +30,7 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
         ),
         'authjwt_key' => array(
             'type' => 'string',
-            'label' => 'Shared secret key (for ES256,HS256,HS384 or HS512 methods) or Public Key (for RS256,RS384,RS512 methods) for JWT authentication',
+            'label' => 'BASE64 Encoded Shared secret key (for ES256,HS256,HS384 or HS512 methods) or Public Key (for RS256,RS384,RS512 methods) for JWT authentication (see: https://www.base64encode.org/ for encoding key to base64)',
             'default' => '',
         ),
         'authjwt_users_name_attr' => array(
@@ -138,7 +138,7 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
         $auto_login  = $this->get('auto_login', null, null, true);
         if ($auto_login && !empty($sPassword)) {
             App()->getClientScript()->registerScript("autoLoginScript",'$( document ).ready(function() { $( "button" ).trigger( "click" );});');
-		}
+        }
     }                                                                           
            
 
@@ -273,8 +273,8 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
         /* unsubscribe from beforeHasPermission, else current event will be modified during check permissions */
         $this->unsubscribe('beforeHasPermission');
 
-		//see if we have a valid JWT header (as password field)
-		$jwt = $this->getPassword();
+        //see if we have a valid JWT header (as password field)
+        $jwt = $this->getPassword();
         if ($jwt !== null) {
             //see if it decodes correctly
             require_once(dirname(__FILE__).'/php-jwt/src/JWT.php');
@@ -282,20 +282,22 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
             require_once(dirname(__FILE__).'/php-jwt/src/SignatureInvalidException.php');
             require_once(dirname(__FILE__).'/php-jwt/src/ExpiredException.php');
             try {
-                $payload = \Firebase\JWT\JWT::decode($jwt, $this->get('authjwt_key', null, null, true), array($this->get('authjwt_method', null, null, true)));
+                $payload = \Firebase\JWT\JWT::decode($jwt, base64_decode($this->get('authjwt_key', null, null, true)), array($this->get('authjwt_method', null, null, true)));
             } catch (Exception $e) {
                 //failed login
                 $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Failed to login. Please go back and try again (your token is not valid, it may have expired)'));
-            	$this->log(__METHOD__.' - ERROR: Failed to decode JWT payload', \CLogger::LEVEL_ERROR);
-	            $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
-				return;				
+                $this->log(__METHOD__.' - ERROR: Failed to decode JWT payload', \CLogger::LEVEL_ERROR);
+                $this->log(__METHOD__.' '.var_export($e->getTraceAsString(), true), \CLogger::LEVEL_TRACE);
+                $this->log(__METHOD__.' '.var_export($e, true), \CLogger::LEVEL_TRACE);
+                $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
+                return;
             }
         } else {
             $this->setAuthFailure(self::ERROR_AUTH_METHOD_INVALID, gT('Limesurvey did not receive JWT token in header'));
             $this->log(__METHOD__.' - ERROR: Limesurvey did not receive JWT token in header', \CLogger::LEVEL_ERROR);
             $this->log(__METHOD__.' - END', \CLogger::LEVEL_TRACE);
-			return;
-		}
+            return;
+        }
 
         $jwtConfigurationError = isset(Yii::app()->session['AuthJWT_configuration_error']);
         if ($jwtConfigurationError){
@@ -343,7 +345,7 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
                     $this->setUsername($sUser);
 
 
-					$this->pluginManager->dispatchEvent(new PluginEvent('newUserLogin', $this));
+                    $this->pluginManager->dispatchEvent(new PluginEvent('newUserLogin', $this));
                     $this->setAuthSuccess($oUser);
                     $this->log(__METHOD__.' - User created: '.$oUser->uid, \CLogger::LEVEL_INFO);
                 } else {
@@ -382,7 +384,7 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
             }
 
             $this->setUsername($sUser);
-			$this->pluginManager->dispatchEvent(new PluginEvent('newUserLogin', $this));
+            $this->pluginManager->dispatchEvent(new PluginEvent('newUserLogin', $this));
             $this->setAuthSuccess($oUser);
             $result = $this->getEvent()->get('result');
             $this->log(__METHOD__.' - User updated: '.$oUser->uid, \CLogger::LEVEL_TRACE);
@@ -422,7 +424,7 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
 
         // Set permissions: Templates
         $auto_create_templates = $this->get('auto_create_templates', null, null, $this->settings['auto_create_templates']['default']);
-        if ($auto_create_templates)	{
+        if ($auto_create_templates)    {
             Permission::model()->setGlobalPermission($uid, 'templates', explode(',', $auto_create_templates));
         }
 
@@ -448,7 +450,7 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
         $attributeValue = '';
 
         if (!empty($jwt)) {
-            if (isset($jwt->$attribute_name) && !empty($jwt->$attribute_name))	{
+            if (isset($jwt->$attribute_name) && !empty($jwt->$attribute_name))    {
                 $attributeValue = $jwt->$attribute_name;
             }
         }
@@ -511,10 +513,10 @@ class AuthJWT extends LimeSurvey\PluginManager\AuthPluginBase
      * Source: https://stackoverflow.com/questions/40582161/how-to-properly-use-bearer-tokens
      * */
     private function getBearerToken() {
-		$request = $this->api->getRequest();
-		if (!is_null($request->getParam('jwt'))) {
-			return $request->getParam('jwt');
-		}
+        $request = $this->api->getRequest();
+        if (!is_null($request->getParam('jwt'))) {
+            return $request->getParam('jwt');
+        }
         $headers = $this->getAuthorizationHeader();
         // HEADER: Get the access token from the header
         if (!empty($headers)) {
